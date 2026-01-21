@@ -2,4 +2,4 @@ data/churn_model.csv
 *.pyc
 __pycache__/
 .venv
-model/*.pkl
+models/*.pkl
