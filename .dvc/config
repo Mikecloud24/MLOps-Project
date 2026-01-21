@@ -1,0 +1,4 @@
+[core]
+    remote = s3churnremote
+['remote "s3churnremote"']
+    url = s3://churn-model-project-bucket
