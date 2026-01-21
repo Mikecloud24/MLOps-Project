@@ -1,6 +1,4 @@
-data/
-models/*.pkl
+data/churn_model.csv
 *.pyc
 __pycache__/
 .venv
-.dvc
