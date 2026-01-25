@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: churn-model-config
+  namespace: churn-model
+data:
+  log_level: "INFO"
+  aws_region: "us-east-1"
+  model_bucket: "churn-model-project-bucket"
+  model_key: "models/churn_model.pkl"

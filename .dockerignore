@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Data and models (use DVC instead)
+data/churn_data.csv
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# DVC
+.dvc/cache/
+.dvc/tmp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+*.md
+LICENSE
+
+# CI/CD
+.github/
+
+# Kubernetes
+k8s/
+argocd/
+
+# Tests
+tests/
+*.test.py
+pytest.ini
+.pytest_cache/
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log

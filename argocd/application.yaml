@@ -3,11 +3,13 @@ kind: Application
 metadata:
   name: churn-model
   namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    repoURL: https://github.com/Mikecloud24/churn-model
-    targetRevision: HEAD
+    repoURL: https://github.com/Mikecloud24/MLOPs-Project
+    targetRevision: automation
     path: k8s
   destination:
     server: https://kubernetes.default.svc
@@ -16,5 +18,21 @@ spec:
     automated:
       prune: true
       selfHeal: true
+      allowEmpty: false
     syncOptions:
-    - CreateNamespace=true
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  # Health assessment
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+  revisionHistoryLimit: 10

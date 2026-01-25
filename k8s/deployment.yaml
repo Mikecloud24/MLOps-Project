@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: churn-model-api
+  namespace: churn-model
+  labels:
+    app: churn-model-api
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: churn-model-api
+  template:
+    metadata:
+      labels:
+        app: churn-model-api
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: sa-s3-access
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: api
+        image: 817471703433.dkr.ecr.us-east-1.amazonaws.com/churn-model-api:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: MODEL_PATH
+          value: "/app/models/churn_model.pkl"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: churn-model-config
+              key: log_level
+        - name: AWS_DEFAULT_REGION
+          valueFrom:
+            configMapKeyRef:
+              name: churn-model-config
+              key: aws_region
+        envFrom:
+        - secretRef:
+            name: s3-secret
+            optional: true
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: true
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      terminationGracePeriodSeconds: 30

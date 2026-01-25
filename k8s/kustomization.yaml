@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: churn-model
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+
+commonLabels:
+  app.kubernetes.io/name: churn-model-api
+  app.kubernetes.io/component: api
+  app.kubernetes.io/part-of: churn-prediction-system
+
+images:
+  - name: churn-model-api
+    newName: 817471703433.dkr.ecr.us-east-1.amazonaws.com/churn-model-api
+    newTag: latest

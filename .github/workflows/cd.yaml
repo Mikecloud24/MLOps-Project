@@ -1,0 +1,74 @@
+name: CD - Update Image Tag
+
+on:
+  workflow_run:
+    workflows: ["CI - Build and Push"]
+    types:
+      - completed
+    branches:
+      - automation
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: churn-model-api
+  
+jobs:
+  update-manifest:
+    name: Update K8s Manifest
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    
+    permissions:
+      contents: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.workflow_run.head_branch }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: Get AWS Account ID
+      id: aws-account
+      run: |
+        echo "account_id=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_OUTPUT
+        
+    - name: Update image tag in deployment manifest
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+        AWS_ACCOUNT_ID: ${{ steps.aws-account.outputs.account_id }}
+      run: |
+        # Update deployment.yaml with new image tag
+        sed -i "s|image: .*|image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:main-${IMAGE_TAG}|g" k8s/deployment.yaml
+        
+        # Also update with AWS Account ID and Region placeholders
+        sed -i "s|<AWS_ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" k8s/deployment.yaml
+        sed -i "s|<AWS_REGION>|${AWS_REGION}|g" k8s/deployment.yaml
+        
+    - name: Commit and push changes
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add k8s/deployment.yaml
+        git commit -m "chore: update image to main-${{ github.sha }}" || exit 0
+        git push
+        
+    - name: Create deployment summary
+      run: |
+        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image**: \`${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:main-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: main" >> $GITHUB_STEP_SUMMARY
+        echo "- **ArgoCD**: Will auto-sync changes" >> $GITHUB_STEP_SUMMARY

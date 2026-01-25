@@ -1,0 +1,87 @@
+name: Model Training Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_version:
+        description: 'DVC dataset version or tag'
+        required: false
+        default: 'latest'
+  schedule:
+    # Run weekly on Sunday at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+env:
+  AWS_REGION: us-east-1
+  S3_BUCKET: churn-model-project-bucket
+
+jobs:
+  train-model:
+    name: Train and Upload Model
+    runs-on: ubuntu-latest
+    
+    permissions:
+      id-token: write
+      contents: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Configure DVC
+      run: |
+        dvc remote modify s3churnremote access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+        dvc remote modify s3churnremote secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        
+    - name: Pull data with DVC
+      run: |
+        dvc pull data/churn_data.csv.dvc
+        
+    - name: Train model
+      run: |
+        python train.py
+        
+    - name: Upload model to S3
+      run: |
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        aws s3 cp models/churn_model.pkl s3://${{ env.S3_BUCKET }}/models/churn_model_${TIMESTAMP}.pkl
+        aws s3 cp models/churn_model.pkl s3://${{ env.S3_BUCKET }}/models/churn_model.pkl
+        
+    - name: Commit model with DVC
+      run: |
+        dvc add models/churn_model.pkl
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add models/churn_model.pkl.dvc models/.gitignore
+        git commit -m "chore: update model $(date +%Y-%m-%d)" || exit 0
+        dvc push
+        git push
+        
+    - name: Create training summary
+      run: |
+        echo "## Model Training Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Dataset Version**: ${{ github.event.inputs.dataset_version || 'latest' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **S3 Bucket**: s3://${{ env.S3_BUCKET }}/models/" >> $GITHUB_STEP_SUMMARY
