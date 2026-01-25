@@ -1,4 +1,4 @@
-name: Test AWS Connection
+name: Test AWS Connections
 on: workflow_dispatch
 
 jobs:
