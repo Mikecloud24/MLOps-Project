@@ -70,15 +70,17 @@ jobs:
       with:
         scan-type: 'fs'
         scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-fs-results.sarif'
+        format: 'table'
+        exit-code: '0'
         severity: 'CRITICAL,HIGH'
         
-    - name: Upload Trivy scan results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-fs-results.sarif'
+    # Upload to GitHub Security (requires GitHub Advanced Security)
+    # Commented out - enable if you have GHAS
+    # - name: Upload Trivy scan results to GitHub Security
+    #   uses: github/codeql-action/upload-sarif@v3
+    #   if: always()
+    #   with:
+    #     sarif_file: 'trivy-fs-results.sarif'
 
   build-and-push:
     name: Build and Push Docker Image stage
@@ -138,15 +140,17 @@ jobs:
       with:
         scan-type: 'image'
         image-ref: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-        format: 'sarif'
-        output: 'trivy-image-results.sarif'
+        format: 'table'
+        exit-code: '0'
         severity: 'CRITICAL,HIGH'
         
-    - name: Upload Trivy image scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-image-results.sarif'
+    # Upload to GitHub Security (requires GitHub Advanced Security)
+    # Commented out - enable if you have GHAS
+    # - name: Upload Trivy image scan results
+    #   uses: github/codeql-action/upload-sarif@v3
+    #   if: always()
+    #   with:
+    #     sarif_file: 'trivy-image-results.sarif'
         
     - name: Generate SBOM
       uses: anchore/sbom-action@v0
