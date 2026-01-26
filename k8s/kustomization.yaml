@@ -17,5 +17,5 @@ commonLabels:
 
 images:
   - name: churn-model-api
-    newName: 817471703433.dkr.ecr.us-east-1.amazonaws.com/churn-model-api
+    newName: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/churn-model-api
     newTag: latest

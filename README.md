@@ -286,6 +286,163 @@ Edit `k8s/configmap.yaml` to change configuration values.
 - [ ] Implement NetworkPolicies
 - [ ] Add distributed tracing
 
+## 🆘 Common Issues & Troubleshooting
+
+### Issue 1: ImagePullBackOff - Tag Mismatch
+
+**Symptom:** Pods stuck in `ImagePullBackOff` state
+
+**Cause:** CI pipeline creates branch-specific tags (e.g., `:automation`, `:main`) but deployment.yaml references `:latest`
+
+**Solution:**
+```bash
+# Check what tags exist in ECR
+aws ecr list-images --repository-name churn-model-api --region us-east-1
+
+# Update deployment.yaml to match actual tag
+kubectl edit deployment churn-model-api -n churn-model
+# Change image tag from :latest to :automation (or your branch name)
+```
+
+**Prevention:** Ensure deployment.yaml image tag matches your branch name or configure CI to always push `:latest` tag on main branch.
+
+### Issue 2: CrashLoopBackOff - DVC Pointer File
+
+**Symptom:** Pods crash with error: `invalid load key, 'v'` or pickle load errors
+
+**Cause:** Docker COPY picked up DVC pointer file instead of actual model binary
+
+**Solution:**
+```bash
+# Remove DVC tracking temporarily
+dvc remove models/churn_model.pkl.dvc
+
+# Train fresh model (creates binary file)
+python train.py
+
+# Rebuild Docker image with actual binary
+docker build -t churn-model-api:latest .
+
+# Push to ECR
+docker tag churn-model-api:latest $ECR_URI:latest
+docker push $ECR_URI:latest
+```
+
+**Prevention:** In CI/CD, add `dvc pull` step before Docker build to fetch actual model files.
+
+### Issue 3: GitHub Actions SARIF Upload Failure
+
+**Symptom:** Security scan job fails with "Resource not accessible by integration"
+
+**Cause:** SARIF uploads to GitHub Security require GitHub Advanced Security (paid feature)
+
+**Solution:**
+```yaml
+# Option 1: Remove SARIF upload (use table output instead)
+- name: Run Trivy scanner
+  run: |
+    trivy fs --format table --severity HIGH,CRITICAL .
+
+# Option 2: If you have GitHub Advanced Security, add permissions
+permissions:
+  security-events: write
+```
+
+### Issue 4: ArgoCD Repository Not Found
+
+**Symptom:** ArgoCD shows "Failed to load target state: authentication required"
+
+**Cause:** ArgoCD doesn't have access to private GitHub repository
+
+**Solution:**
+```bash
+# Create GitHub Personal Access Token with repo permissions
+# Then add repository to ArgoCD:
+
+kubectl create secret generic github-repo -n argocd \
+  --from-literal=url=https://github.com/<USERNAME>/<REPO> \
+  --from-literal=username=<USERNAME> \
+  --from-literal=password=<GITHUB_PAT> \
+  -o yaml --dry-run=client | kubectl apply -f -
+
+kubectl label secret github-repo -n argocd \
+  argocd.argoproj.io/secret-type=repository
+```
+
+### Issue 5: ArgoCD UI Shows Old Failed Pods
+
+**Symptom:** ArgoCD resource tree displays old failed pods/ReplicaSets alongside healthy ones
+
+**Cause:** Kubernetes keeps old ReplicaSets for rollback history
+
+**Solution:**
+```bash
+# In ArgoCD UI: Click "Sync" → Check "Prune" → Click "Synchronize"
+
+# Or via kubectl:
+kubectl delete replicaset <old-replicaset-name> -n churn-model
+
+# Or sync with prune enabled:
+kubectl patch application churn-model -n argocd \
+  --type merge -p '{"operation":{"sync":{"prune":true}}}'
+```
+
+### Issue 6: curl Not Working in PowerShell
+
+**Symptom:** POST requests with `-d` flag fail in PowerShell
+
+**Cause:** PowerShell's `curl` is actually an alias for `Invoke-WebRequest` with different syntax
+
+**Solution:**
+```powershell
+# Option 1: Use WSL/Git Bash for curl commands
+bash -c 'curl -X POST "http://$LB_URL/predict" ...'
+
+# Option 2: Use PowerShell native cmdlet
+Invoke-RestMethod -Uri "http://$LB_URL/predict" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body '{"age":45,"tenure_months":24,...}'
+```
+
+### Issue 7: EKS Nodes Can't Pull from ECR
+
+**Symptom:** ImagePullBackOff with "unauthorized" error
+
+**Cause:** EKS node IAM role missing ECR permissions
+
+**Solution:**
+```bash
+# Attach ECR read policy to node group IAM role
+aws iam attach-role-policy \
+  --role-name <node-group-role-name> \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+```
+
+### General Debugging Commands
+
+```bash
+# Check pod status
+kubectl get pods -n churn-model
+
+# Describe pod (see events)
+kubectl describe pod <pod-name> -n churn-model
+
+# View pod logs
+kubectl logs <pod-name> -n churn-model
+kubectl logs <pod-name> -n churn-model --previous  # Previous crash
+
+# Check events
+kubectl get events -n churn-model --sort-by='.lastTimestamp'
+
+# Check ArgoCD application
+kubectl describe application churn-model -n argocd
+
+# Force ArgoCD refresh
+kubectl patch application churn-model -n argocd \
+  --type merge -p '{"operation":{"sync":{"revision":"HEAD"}}}'
+```
+
 ## 📄 License
 
 See [LICENSE](LICENSE) file for details.

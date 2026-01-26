@@ -203,7 +203,32 @@ git commit -m "Add data and model with DVC"
 git push
 ```
 
-### 6. Deploy with ArgoCD
+### 6. Configure ArgoCD Repository Access
+
+**For Private Repositories:**
+
+```bash
+# Create GitHub Personal Access Token
+# Go to GitHub → Settings → Developer settings → Personal access tokens
+# Create token with 'repo' permissions
+
+# Add repository to ArgoCD
+kubectl create secret generic github-repo -n argocd \
+  --from-literal=url=https://github.com/<USERNAME>/<REPO> \
+  --from-literal=username=<USERNAME> \
+  --from-literal=password=<GITHUB_PERSONAL_ACCESS_TOKEN> \
+  -o yaml --dry-run=client | kubectl apply -f -
+
+# Label it so ArgoCD recognizes it
+kubectl label secret github-repo -n argocd \
+  argocd.argoproj.io/secret-type=repository
+```
+
+**For Public Repositories:**
+
+No additional configuration needed - ArgoCD can access public repos directly.
+
+### 7. Deploy with ArgoCD
 
 ```bash
 # Apply ArgoCD application
@@ -216,7 +241,7 @@ kubectl get pods -n churn-model -w
 kubectl get application churn-model -n argocd
 ```
 
-### 7. Verify Deployment
+### 8. Verify Deployment
 
 ```bash
 # Check pods
@@ -231,7 +256,7 @@ export LB_URL=$(kubectl get svc churn-model-api -n churn-model -o jsonpath='{.st
 # Test health endpoint
 curl http://$LB_URL/health
 
-# Test prediction endpoint
+# Test prediction endpoint (use WSL/Git Bash on Windows)
 curl -X POST "http://$LB_URL/predict" \
   -H "Content-Type: application/json" \
   -d '{
@@ -241,7 +266,74 @@ curl -X POST "http://$LB_URL/predict" \
     "total_charges": 1919.76,
     "num_support_calls": 3
   }'
+
+# For PowerShell, use:
+# Invoke-RestMethod -Uri "http://$LB_URL/predict" -Method Post -ContentType "application/json" -Body '{"age":45,"tenure_months":24,"monthly_charges":79.99,"total_charges":1919.76,"num_support_calls":3}'
 ```
+
+## 💡 Practical Tips
+
+### Image Tag Strategy
+
+**Important:** GitHub Actions creates branch-specific image tags:
+- `main` branch → `latest` and `main-<sha>` tags
+- Other branches → `<branch-name>` and `<branch-name>-<sha>` tags
+
+Ensure your `k8s/deployment.yaml` matches:
+```yaml
+image: <account>.dkr.ecr.<region>.amazonaws.com/churn-model-api:automation  # Match your branch
+```
+
+### DVC and Docker Builds
+
+**Critical:** DVC replaces binary files with text pointers. When building Docker images:
+
+1. **For local builds:** Remove DVC tracking temporarily or ensure model file is binary
+2. **For CI/CD builds:** Add `dvc pull` step before `docker build`
+
+```yaml
+# Add to CI workflow before build step
+- name: Pull model from DVC
+  run: dvc pull
+  env:
+    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+```
+
+### ArgoCD UI Access
+
+```bash
+# Port-forward ArgoCD server
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# Get admin password
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d
+
+# Access at: https://localhost:8080
+# Username: admin
+# Password: (from above)
+```
+
+### Cleaning Up Old Resources
+
+ArgoCD keeps old ReplicaSets for rollback. To clean up:
+
+```bash
+# In ArgoCD UI: Sync → Enable "Prune" → Synchronize
+
+# Or manually:
+kubectl delete replicaset <old-rs-name> -n churn-model
+```
+
+### GitHub Actions Security Scanning
+
+**Note:** SARIF uploads to GitHub Security tab require GitHub Advanced Security (paid feature).
+
+If you see "Resource not accessible" errors:
+- Remove SARIF upload steps
+- Use `--format table` for Trivy instead
+- Or upgrade to GitHub Enterprise with Advanced Security
 
 ## Troubleshooting
 

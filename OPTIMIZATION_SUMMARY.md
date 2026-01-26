@@ -318,3 +318,144 @@ Your MLOps project is now **production-ready** with:
 **Total files created/modified: 20+**
 
 All Phase 1 optimizations are complete! 🚀
+
+## 📝 Lessons Learned (Real Deployment)
+
+### 1. Image Tag Strategy Matters
+
+**Issue:** Initial deployment used `:latest` tag in deployment.yaml, but CI pipeline created branch-specific tags (`:automation`, `:main`).
+
+**Learning:** 
+- GitHub Actions creates different tags based on branch
+- Deployment manifests must match actual tags in ECR
+- For testing branches, use branch name as tag (e.g., `:automation`)
+- Only `main` branch gets `:latest` tag automatically
+
+**Solution:** CD pipeline now dynamically updates image tags in manifests.
+
+### 2. DVC + Docker Requires Special Handling
+
+**Issue:** Docker COPY picked up DVC pointer file (text file starting with "version") instead of actual model binary, causing pickle load errors.
+
+**Learning:**
+- DVC replaces tracked files with text pointers
+- Docker COPY doesn't automatically fetch from DVC
+- Need actual binary files for Docker builds
+
+**Solutions:**
+- **Local builds:** Temporarily remove DVC tracking or train model fresh
+- **CI/CD builds:** Add `dvc pull` step before Docker build
+- **Alternative:** Don't DVC-track files needed in Docker images, only use DVC for archival
+
+### 3. ArgoCD Private Repository Authentication
+
+**Issue:** ArgoCD couldn't access private GitHub repository, showed "authentication required" error.
+
+**Learning:**
+- ArgoCD needs explicit repository credentials for private repos
+- Must create Kubernetes Secret with special label
+- Personal Access Token with `repo` permissions required
+
+**Solution:**
+```bash
+kubectl create secret generic github-repo -n argocd \
+  --from-literal=url=https://github.com/USER/REPO \
+  --from-literal=username=USER \
+  --from-literal=password=PAT
+  
+kubectl label secret github-repo -n argocd \
+  argocd.argoproj.io/secret-type=repository
+```
+
+### 4. GitHub Advanced Security Required for SARIF
+
+**Issue:** CI workflow failed when uploading Trivy SARIF results to GitHub Security tab.
+
+**Learning:**
+- SARIF uploads require GitHub Advanced Security (paid feature)
+- Not available on free GitHub accounts
+- Error message is cryptic: "Resource not accessible by integration"
+
+**Solution:** Remove SARIF upload steps, use table format instead:
+```yaml
+- name: Trivy scan
+  run: trivy fs --format table --severity HIGH,CRITICAL .
+```
+
+### 5. ArgoCD Keeps Old ReplicaSets
+
+**Issue:** ArgoCD UI showed old failed pods/ReplicaSets alongside healthy ones, looked degraded.
+
+**Learning:**
+- Kubernetes keeps old ReplicaSets for rollback capability
+- ArgoCD displays full resource tree including history
+- This is normal behavior, not a problem
+
+**Maintenance:** Periodically sync with prune enabled to clean up:
+```bash
+# In UI: Sync → Enable "Prune" → Synchronize
+# Or: kubectl delete replicaset <old-rs> -n churn-model
+```
+
+### 6. PowerShell curl != Linux curl
+
+**Issue:** curl POST requests with `-d` flag failed in PowerShell.
+
+**Learning:**
+- PowerShell `curl` is alias for `Invoke-WebRequest`
+- Different syntax and behavior than Linux curl
+- Can cause confusion when following Linux-based docs
+
+**Solutions:**
+- Use WSL or Git Bash for standard curl commands
+- Or use PowerShell native: `Invoke-RestMethod`
+
+### 7. EKS Nodes Need ECR Permissions
+
+**Issue:** Some deployments showed ImagePullBackOff with "unauthorized" errors.
+
+**Learning:**
+- EKS node IAM roles need ECR read permissions
+- Not automatically configured in all cluster setups
+- Required for pulling from private ECR repositories
+
+**Solution:**
+```bash
+aws iam attach-role-policy \
+  --role-name <node-group-role> \
+  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+```
+
+### 8. Testing in Branches is Safer
+
+**Success:** Using `automation` branch for testing before merging to `main` prevented production disruptions.
+
+**Best Practice:**
+- Test all changes in feature/automation branches first
+- Configure ArgoCD to track test branch initially
+- Verify full deployment cycle works
+- Then merge to main and switch ArgoCD to track main
+- Use branch-specific image tags during testing
+
+## 🎯 Key Takeaways
+
+1. ✅ **Image tags must match reality** - Check ECR, don't assume `:latest` exists
+2. ✅ **DVC and Docker don't mix well** - Need `dvc pull` in CI or skip DVC for Dockerized files
+3. ✅ **ArgoCD needs explicit repo access** - Set up credentials for private repos
+4. ✅ **SARIF needs Advanced Security** - Use table output for free accounts
+5. ✅ **Old ReplicaSets are normal** - Kubernetes keeps them for rollback
+6. ✅ **Use proper shell for curl** - WSL/Bash on Windows for compatibility
+7. ✅ **ECR needs node permissions** - Verify IAM roles
+8. ✅ **Test in branches first** - Safety-first approach prevents production issues
+
+## 🚀 Production Ready
+
+After resolving these real-world issues:
+- ✅ Full CI/CD pipeline operational
+- ✅ GitOps deployment with ArgoCD working
+- ✅ Kubernetes pods running healthy (3/3)
+- ✅ API endpoints responding correctly
+- ✅ Health checks passing
+- ✅ Prediction endpoint tested successfully
+
+**Status:** Production deployment complete and verified! 🎉
