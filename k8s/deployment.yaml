@@ -28,7 +28,7 @@ spec:
         fsGroup: 1000
       containers:
       - name: api
-        image: 817471703433.dkr.ecr.us-east-1.amazonaws.com/churn-model-api:latest
+        image: 817471703433.dkr.ecr.us-east-1.amazonaws.com/churn-model-api:automation
         imagePullPolicy: Always
         ports:
         - name: http
